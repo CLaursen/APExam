@@ -6,23 +6,25 @@
 
 start(State) -> gen_server:start(optimistic,[State],[]).
 
-stop(_) -> not_implemented.
-reset(_,_) -> not_implemented.
-delete(_, _) -> not_implemented.
+stop(S) -> gen_server:call(S, stop, infinity).
 
-operation(PID, Reads, OFun) -> {ok, gen_server:call(PID, {new_op, Reads, OFun}, infinity)}.
+reset(S, State) -> gen_server:call(S, {reset, State}, infinity).
 
+delete(S, Keys) -> gen_server:call(S, {delete, Keys}, infinity).
 
-commit(OR) ->
+operation(S, Reads, OFun) -> {ok, gen_server:call(S, {new_op, Reads, OFun}, infinity)}.
+
+commit(OR) -> request_reply(OR, commit).
+
+abort(OR) -> request_reply(OR, abort).
+
+request_reply(PID, Request) ->
     Ref = make_ref(),
     Me = self(),
-    OR ! {commit, Ref, Me},
+    PID ! {Request, Ref, Me},
     receive
         {Ref, Result} -> Result
     end.
-
-abort(_) -> not_implemented.
-
 
 supervisor(View, OFun, S) ->
     process_flag(trap_exit, true),
@@ -45,33 +47,47 @@ loop_supervisor(WID, S, Status, Result, CommitList) ->
             loop_supervisor(WID, S, aborted, Result, []);
         {result, WID, {Res, Change}} ->
             case Status of
-                ongoing -> 
+                ongoing ->
                     case CommitList of
                         [] -> loop_supervisor(WID, S, finished, {Res, Change}, CommitList);
                         _ -> Response = gen_server:call(S, {commit, Change}, infinity),
                              case Response of
                                  aborted -> respond(aborted, CommitList),
                                             loop_supervisor(WID, S, aborted, {Res, Change}, []);
-                                 committed -> Response({ok, Res}),
+                                 committed -> respond({ok, Res}, CommitList),
                                               loop_supervisor(WID, S, committed, {Res, Change}, [])
                              end
                     end;
                 aborted -> loop_supervisor(WID, S, Status, Result, CommitList)
             end;
         % abortall is when the optimistic server aborts all ongoing operations in reset or stop
-        abortall -> loop_supervisor(WID, S, aborted, Result, []);
-        {abort, Ref, Client_ID} -> 
+        abortall ->
             case Status of
-                committed -> Client_ID ! {Ref, too_late};
+                ongoing -> exit(WID, kill),
+                           respond(aborted, CommitList),
+                           loop_supervisor(WID, S, aborted, Result, []);
+                finished -> loop_supervisor(WID, S, aborted, Result, []);
+                _ -> loop_supervisor(WID, S, Status, Result, [])
+            end;
+        stop ->
+            case Status of
+                ongoing -> exit(WID, kill);
+                _ -> nothing
+            end;
+        {abort, Ref, Client_ID} ->
+            case Status of
+                committed -> Client_ID ! {Ref, too_late},
+                             loop_supervisor(WID, S, Status, Result, []);
                 aborted -> Client_ID ! {Ref, aborted},
                            loop_supervisor(WID, S, aborted, Result, CommitList);
                 finished -> gen_server:call(S, abort, infinity),
                      Client_ID ! {Ref, aborted},
                      loop_supervisor(WID, S, aborted, Result, CommitList);
-                ongoing -> stop(WID), %stops the worker as the result isnt needed
+                ongoing -> exit(WID, kill), %stops the worker as the result isnt needed
+                     respond(aborted, CommitList),
                      gen_server:call(S, abort, infinity),
                      Client_ID ! {Ref, aborted},
-                     loop_supervisor(WID, S, aborted, Result, CommitList)
+                     loop_supervisor(WID, S, aborted, Result, [])
             end;
         {commit, Ref, Client_ID} ->
             case Status of
@@ -80,7 +96,8 @@ loop_supervisor(WID, S, Status, Result, CommitList) ->
                             case C of
                                 aborted -> Client_ID ! {Ref, aborted};
                                 _ -> Client_ID ! {Ref, {ok, element(1, Result)}}
-                            end;
+                            end,
+                            loop_supervisor(WID, S, C, Result, []);
                 aborted -> Client_ID ! {Ref, aborted},
                            loop_supervisor(WID, S, Status, Result, CommitList);
                 committed -> Client_ID ! {Ref, {ok, element(1, Result)}},
@@ -95,25 +112,26 @@ respond(Message, [{From, Ref}| Tail]) -> From ! {Ref, Message},
 
 %callback functions
 %state tuple is {shared state, map for OR}
-init([Arg]) -> {ok, {Arg, maps:new()}}.
+init([Arg]) -> {ok, {Arg, maps:new(), []}}.
 
 %key of OR map is the PID of the OR process
 %value of OR map is: {list of read keys, list of dirty keys)
 % key, value pair is removed from the map when aborted of committed
 
 
-handle_call({new_op, Reads, OFun}, _From, {State, OR_map}) ->
+handle_call({new_op, Reads, OFun}, _From, {State, OR_map, Completed}) ->
     View = maps:with(Reads, State),
     Me = self(),
     PID = spawn(fun() -> supervisor(View, OFun, Me) end),
     New_OR_map = maps:put(PID, {Reads, []}, OR_map),
-    {reply, PID, {State, New_OR_map}};
+    {reply, PID, {State, New_OR_map, Completed}};
 
-handle_call(abort, _From, {State, OR_map}) ->
-    not_implemented;
+handle_call(abort, {PID, _}, {State, OR_map, Completed}) ->
+    New_OR_map = maps:remove(PID, OR_map),
+    {reply, aborted, {State, New_OR_map, [PID | Completed]}};
 
 
-handle_call({commit, Change}, {PID, _}, {State, OR_map}) ->
+handle_call({commit, Change}, {PID, _}, {State, OR_map, Completed}) ->
     Write = maps:keys(Change),
     {Reads, Dirty} = maps:get(PID, OR_map),
     Overlap = sets:intersection(sets:from_list(Write ++ Reads), sets:from_list(Dirty)),
@@ -121,11 +139,29 @@ handle_call({commit, Change}, {PID, _}, {State, OR_map}) ->
         true -> Reduced_OR_map = maps:remove(PID, OR_map),
                 Fun = fun(_K, {Reads2, Dirty2}) -> {Reads2, Dirty2 ++ Write} end,
                 New_OR_map = maps:map(Fun, Reduced_OR_map),
-                New_State = maps:merge(Change, State),
-                {reply, committed, {New_State, New_OR_map}};
+                New_State = maps:merge(State, Change),
+                {reply, committed, {New_State, New_OR_map, [PID | Completed]}};
         _ -> New_OR_map = maps:remove(PID, OR_map),
-             {reply, aborted, {State, New_OR_map}}
-    end.
+             {reply, aborted, {State, New_OR_map, [PID | Completed]}}
+    end;
+
+handle_call({delete, Keys}, _From, {State, OR_map, Completed}) ->
+    New_State = maps:without(Keys, State),
+    Fun = fun(_K, {Reads, Dirty}) -> {Reads, Dirty ++ Keys} end,
+    New_OR_map = maps:map(Fun, OR_map),
+    {reply, ok, {New_State, New_OR_map, Completed}};
+
+handle_call({reset, New_state}, _From, {_State, OR_map, Completed}) ->
+    Keys = maps:keys(OR_map),
+    Fun = fun(Key) -> Key ! abortall end,
+    lists:for_each(Fun, Keys),
+    {reply, ok, {New_state, maps:new(), Keys ++ Completed}};
+
+handle_call(stop, _From, {State, OR_map, Completed}) ->
+    Keys = maps:keys(OR_map),
+    Fun = fun(Key) -> Key ! stop end,
+    lists:foreach(Fun, Keys ++ Completed),
+    {stop, normal, {ok, State}, {State, OR_map, Completed}}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.

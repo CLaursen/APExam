@@ -1,4 +1,7 @@
 -module(test_optimistic).
+%the full path was needed for me to run eqc on my machine
+-include_lib("C:/Program Files/erl10.4/lib/eqc-2.01.0/include/eqc.hrl").
+%-include_lib("eqc/include/eqc.hrl").
 
 -export([mkopr/2, good_opr/0, prop_opr_accurate/1, prop_server_commit/0, prop_isolated/0,
          test_all/0, test_everything/0]).
