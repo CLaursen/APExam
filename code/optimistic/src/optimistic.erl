@@ -60,7 +60,7 @@ loop_supervisor(WID, S, Status, Result, CommitList) ->
                     end;
                 aborted -> loop_supervisor(WID, S, Status, Result, CommitList)
             end;
-        % abortall is when the optimistic server aborts all ongoing operations in reset or stop
+        % abortall is when the optimistic server aborts all ongoing operations in reset
         abortall ->
             case Status of
                 ongoing -> exit(WID, kill),
@@ -71,7 +71,8 @@ loop_supervisor(WID, S, Status, Result, CommitList) ->
             end;
         stop ->
             case Status of
-                ongoing -> exit(WID, kill);
+                ongoing -> exit(WID, kill),
+                           respond(aborted, CommitList);
                 _ -> nothing
             end;
         {abort, Ref, Client_ID} ->
@@ -154,7 +155,7 @@ handle_call({delete, Keys}, _From, {State, OR_map, Completed}) ->
 handle_call({reset, New_state}, _From, {_State, OR_map, Completed}) ->
     Keys = maps:keys(OR_map),
     Fun = fun(Key) -> Key ! abortall end,
-    lists:for_each(Fun, Keys),
+    lists:foreach(Fun, Keys),
     {reply, ok, {New_state, maps:new(), Keys ++ Completed}};
 
 handle_call(stop, _From, {State, OR_map, Completed}) ->
