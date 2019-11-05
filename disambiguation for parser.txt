@@ -1,0 +1,14 @@
+RSpec ::= T RSpec'
+RSpec' ::= RSpec'' | '|' T RSpec'' RSpec'
+RSpec'' ::= ',' T RSpec' | epsilon
+T ::= RName | num RSpec | '(' RSpec ')'
+
+
+C = '{' C' '}' | epsilon
+C' = C'' C C''
+C'' = alt på nær '{' og '}' | epsilon
+
+
+
+parseStringTest "{test}{{a}f{f}}{fds} {bbg} resource niels."
+parseStringTest "{a{a{a}a{a}a}a{}}{a}"
