@@ -1,8 +1,13 @@
+RSpec ::= T RSpec2
+RSpec2 ::= RSpec3 | '|' T RSpec3 RSpec2
+RSpec3 ::= ',' T RSpec2 | epsilon
+T ::= RName | num T | '(' RSpec ')'
+
+
 RSpec ::= T RSpec'
 RSpec' ::= RSpec'' | '|' T RSpec'' RSpec'
 RSpec'' ::= ',' T RSpec' | epsilon
-T ::= RName | num RSpec | '(' RSpec ')'
-
+T ::= RName | num T | '(' RSpec ')'
 
 C = '{' C' '}' | epsilon
 C' = C'' C C''

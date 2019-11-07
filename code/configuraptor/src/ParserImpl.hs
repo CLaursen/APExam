@@ -9,7 +9,6 @@ parseString s =
   case readP_to_S pDatabase s of
     [] -> Left "couldn't parse input"
     [(output, "")] -> Right output
-    [(_, remaining)] -> Left ("this part wasn't parsed: " ++ remaining)
 
 pDatabase :: ReadP IDB
 pDatabase = do
@@ -61,8 +60,8 @@ pName name = do
 
 pWord :: ReadP String
 pWord = do
-  word <- munch1 (\x -> isLetter x || isDigit x)
-  let letters = filter isLetter word
+  word <- munch1 (\x -> (isLetter x && isAscii x) || isDigit x)
+  let letters = filter (\x -> isLetter x && isAscii x) word
   if length letters /= 0
     then return word
     else fail "word doesn't contain any letters"
@@ -130,7 +129,7 @@ pTerm = do
     return (RSRes name)
   +++ do
     num <- pNum
-    rSpec <- pRSpec
+    rSpec <- pTerm
     return (RSNum num rSpec)
   +++ do
     symbol '('
@@ -148,6 +147,7 @@ pNum = do
       return num
     else fail ("number is to large")
 
+-- Code taken from AP19 Assignment 2 submission by KFN536+XJV552
 keyword :: String -> ReadP ()
 keyword s = do
   mapM_ (\c -> satisfy (\x -> x == toLower c || x == toUpper c)) s
@@ -160,7 +160,7 @@ check s = do
   then return ()
   else
     let c = head l in
-      if not (isLetter c || c == '-' || isDigit c)
+      if not ((isLetter c && isAscii c) || c == '-' || isDigit c)
       then do
         remover ()
       else fail ("expected: " ++ s)
@@ -173,6 +173,9 @@ remover a = do
   <++ do
     skipSpaces
     return a
+
+-- End of copied code
+
 
 comment :: ReadP ()
 comment = do
@@ -189,10 +192,12 @@ internalComments = do
     internalComments
     return ()
   <++
-   return ()
+    return ()
+
+-- Code taken from AP19 Assignment 2 submission by KFN536+XJV552
 
 -- symbolString verifies that a given symbol is the next char we should parse
--- is used inside strings
+-- is used for names and comments
 symbolString :: Char -> ReadP ()
 symbolString c = do
   c' <- satisfy (== c)
@@ -206,3 +211,5 @@ symbol c = do
   c' <- satisfy (== c)
   if c' == c then remover ()
     else fail ("expected: " ++ [c] ++ " but got: " ++ [c'])
+
+-- End of copied code
