@@ -30,6 +30,12 @@ tests = testGroup "Minimal tests" [
 
 
 my_tests = testGroup "my tests" [
+  parser_tests,
+  solver_tests
+  ]
+  
+
+parser_tests = testGroup "parser tests" [
   resource_tests,
   name_tests,
   component_tests,
@@ -42,7 +48,6 @@ my_tests = testGroup "my tests" [
     --components.cr program
     components_program =  "{Resources} \n resource GB-RAM, DIMM-slot. \n resource Intel-CPU-socket, AMD-CPU-socket, x86-processor. \n resource monitor, VGA-port, HDMI-port. \n resource OS. \n resource DKK. \n {RAM} \n component 8GB-module: \n   provides 8 GB-RAM; \n   uses 1 DIMM-slot; \n   uses 500 DKK. \n component 4GB-module: \n   provides 4 GB-RAM; \n   uses 1 DIMM-slot; \n   uses 300 DKK. \n {Motherboards} \n component Intel-motherboard: \n   provides 2 DIMM-slot; \n   provides Intel-CPU-socket; \n   provides VGA-port; {integrated graphics} \n   uses 500 DKK. \n component AMD-motherboard: \n   provides 2 DIMM-slot; \n   provides AMD-CPU-socket; \n   uses 600 DKK. \n {Processors} \n component Intel-i8: \n   provides x86-processor; \n   uses Intel-CPU-socket; \n   uses 800 DKK. \n component AMD-Ryzen6: \n   provides x86-processor; \n   uses AMD-CPU-socket; \n   uses 700 DKK. \n    \n {Graphics cards and monitors} \n component NVIDIA-GPU: \n   provides 2 HDMI-port; \n   uses 1500 DKK. \n component monitor1: \n   provides monitor; \n   requires HDMI-port; \n   uses 1200 DKK. \n component monitor2: \n   provides monitor; \n   requires HDMI-port | VGA-port; \n   uses 1500 DKK. \n {Software} \n component Linux: \n   provides OS; \n   requires x86-processor; \n   uses 0 DKK. {Free!} \n component Windows: \n   provides OS; \n   requires x86-processor; \n   uses 1000 DKK."
     components_program_result = (["GB-RAM","DIMM-slot","Intel-CPU-socket","AMD-CPU-socket","x86-processor","monitor","VGA-port","HDMI-port","OS","DKK"],[IC "8GB-module" [(CKProvides,RSNum 8 (RSRes "GB-RAM")),(CKUses,RSNum 1 (RSRes "DIMM-slot")),(CKUses,RSNum 500 (RSRes "DKK"))],IC "4GB-module" [(CKProvides,RSNum 4 (RSRes "GB-RAM")),(CKUses,RSNum 1 (RSRes "DIMM-slot")),(CKUses,RSNum 300 (RSRes "DKK"))],IC "Intel-motherboard" [(CKProvides,RSNum 2 (RSRes "DIMM-slot")),(CKProvides,RSRes "Intel-CPU-socket"),(CKProvides,RSRes "VGA-port"),(CKUses,RSNum 500 (RSRes "DKK"))],IC "AMD-motherboard" [(CKProvides,RSNum 2 (RSRes "DIMM-slot")),(CKProvides,RSRes "AMD-CPU-socket"),(CKUses,RSNum 600 (RSRes "DKK"))],IC "Intel-i8" [(CKProvides,RSRes "x86-processor"),(CKUses,RSRes "Intel-CPU-socket"),(CKUses,RSNum 800 (RSRes "DKK"))],IC "AMD-Ryzen6" [(CKProvides,RSRes "x86-processor"),(CKUses,RSRes "AMD-CPU-socket"),(CKUses,RSNum 700 (RSRes "DKK"))],IC "NVIDIA-GPU" [(CKProvides,RSNum 2 (RSRes "HDMI-port")),(CKUses,RSNum 1500 (RSRes "DKK"))],IC "monitor1" [(CKProvides,RSRes "monitor"),(CKRequires,RSRes "HDMI-port"),(CKUses,RSNum 1200 (RSRes "DKK"))],IC "monitor2" [(CKProvides,RSRes "monitor"),(CKRequires,RSOr (RSRes "HDMI-port") (RSRes "VGA-port")),(CKUses,RSNum 1500 (RSRes "DKK"))],IC "Linux" [(CKProvides,RSRes "OS"),(CKRequires,RSRes "x86-processor"),(CKUses,RSNum 0 (RSRes "DKK"))],IC "Windows" [(CKProvides,RSRes "OS"),(CKRequires,RSRes "x86-processor"),(CKUses,RSNum 1000 (RSRes "DKK"))]])
-
 
     -- resource test
 resource_tests = testGroup "resource test" [
@@ -108,6 +113,8 @@ component_tests = testGroup "component tests" [
     parseString component_num_rspec @?= Right component_num_rspec_result,
   testCase "component with a num that is too high" $
     parseString component_num_too_high @?= Left component_num_too_high_result,
+  testCase "component with two nums in a row" $
+    parseString component_two_nums @?= Right component_two_nums_result,
   testCase "component with two RSpecs" $
     parseString component_two_rspecs @?= Right component_two_rspecs_result,
   testCase "component with an or RSpec" $
@@ -138,6 +145,8 @@ component_tests = testGroup "component tests" [
     component_num_rspec_result = ([],[IC "Ram" [(CKProvides,RSNum 8 (RSRes "GB"))]])
     component_num_too_high = "component Ram : provides 1000000 GB."
     component_num_too_high_result = "couldn't parse input"
+    component_two_nums = "component Ram : provides 4 8 GB."
+    component_two_nums_result = ([],[IC "Ram" [(CKProvides,RSNum 4 (RSNum 8 (RSRes "GB")))]])
     component_two_rspecs = "component Ram : provides 8 GB , RGB."
     component_two_rspecs_result = ([],[IC "Ram" [(CKProvides,RSAnd (RSNum 8 (RSRes "GB")) (RSRes "RGB"))]])
     component_rspec_or = "component Monitor : requires HDMI | Display-port."
@@ -152,8 +161,8 @@ component_tests = testGroup "component tests" [
     component_uses_clause_result = ([],[IC "Monitor" [(CKUses,RSRes "monitor-space")]])
     multiple_components = "component Ram : provides 8 GB. component GPU : provides CUDA-cores."
     multiple_components_result = ([],[IC "Ram" [(CKProvides,RSNum 8 (RSRes "GB"))],IC "GPU" [(CKProvides,RSRes "CUDA-cores")]])
-    component_rspec_parenthesis = "component Ram : provides 4 8 GB."
-    component_rspec_parenthesis_result = ([],[IC "Ram" [(CKProvides,RSNum 4 (RSNum 8 (RSRes "GB")))]])
+    component_rspec_parenthesis = "component Ram : provides 8 GB , (RGB | no-RGB)."
+    component_rspec_parenthesis_result = ([],[IC "Ram" [(CKProvides,RSAnd (RSNum 8 (RSRes "GB")) (RSOr (RSRes "RGB") (RSRes "no-RGB")))]])
     component_no_cname = "component : provides GB."
     component_no_cname_result = "couldn't parse input"
     component_no_clauses = "component Ram : ."
@@ -216,3 +225,102 @@ comment_tests = testGroup "comment tests" [
     comment_doesnt_end_result = "couldn't parse input"
     comment_in_rspec = "component Ram : provides 4{comment}GB."
     comment_in_rspec_result = ([],[IC "Ram" [(CKProvides,RSNum 4 (RSRes "GB"))]])
+
+solver_tests = testGroup "Solver tests" [
+  combine_tests,
+  verify_tests
+  ]
+
+combine_tests = testGroup "combine tests" [
+  testCase "a simple combine" $
+    combine combine_simple1 combine_simple2 @?= combine_simple_result,
+  testCase "resource in 2nd input goes between resources in 1st input" $
+    combine combine_into_middle1 combine_into_middle2 @?= combine_into_middle_result,
+  testCase "combine two rprofs that results in an empty list" $
+    combine combine_to_nothing1 combine_to_nothing2 @?= combine_to_nothing_result,
+  testCase "combine capital R is sorted before lower n" $
+    combine combine_R_before_n1 combine_R_before_n2 @?= combine_R_before_n_result,
+  testCase "combine keep the highest of the requirements for the same resource" $
+    combine combine_max_require1 combine_max_require2 @?= combine_max_require_result,
+  testCase "combine a mix of different tests" $
+    combine combine_mix1 combine_mix2 @?= combine_mix_result
+  ]
+  where
+    combine_simple1 = [(R "r1", (1,0))]
+    combine_simple2 = [(R "r2", (1,0))]
+    combine_simple_result = [(R "r1", (1,0)), (R "r2",(1,0))]
+    combine_into_middle1 = [(R "r1", (1,0)), (R "r3", (1,0))]
+    combine_into_middle2 = [(R "r2", (1,0))]
+    combine_into_middle_result = [(R "r1", (1,0)), (R "r2", (1,0)), (R "r3", (1,0))]
+    combine_to_nothing1 = [(R "r1", (1,0))]
+    combine_to_nothing2 = [(R "r1", (-1,0))]
+    combine_to_nothing_result = []
+    combine_R_before_n1 = [(R "n1", (1,0))]
+    combine_R_before_n2 = [(R "R2", (1,0))]
+    --sorting is by Ascii order where capital letters are before lower case letters
+    combine_R_before_n_result = [(R "R2", (1,0)), (R "n1", (1,0))]
+    combine_max_require1 = [(R "r1", (3,4))]
+    combine_max_require2 = [(R "r1", (2,2))]
+    combine_max_require_result = [(R "r1", (5,4))]
+    combine_mix1 = [(R "r0", (1,0)),(R "r1", (1,0)),(R "r3", (1,0)),(R "r5", (1,1)),(R "r6", (1,0)),(R "r9", (1,0))]
+    combine_mix2 = [(R "r0", (-1,0)),(R "r2", (1,0)),(R "r4", (1,0)),(R "r5", (1,0)),(R "r7", (1,0)),(R "r8", (1,0))]
+    combine_mix_result = [(R "r1",(1,0)),(R "r2",(1,0)),(R "r3",(1,0)),(R "r4",(1,0)),(R "r5",(2,1)),(R "r6",(1,0)),(R "r7",(1,0)),(R "r8",(1,0)),(R "r9",(1,0))]
+  
+
+verify_tests = testGroup "verify tests" [
+  testCase "a simple verify" $
+    verify verify_simpleDB verify_simpleGoal verify_simpleSol @?= Right verify_simple_result,
+  testCase "solution not valid because goal is to low" $
+    verify verify_no_validDB verify_no_validGoal verify_no_validSol @?= Left verify_no_valid_result,
+  testCase "Component from solution not in the database" $
+    verify verify_not_in_dbDB verify_not_in_dbgoal verify_not_in_dbSol @?= Left verify_not_in_db_result,
+  testCase "Multiple components in possible solution" $
+    verify verify_more_compsDB verify_more_compsGoal verify_more_compsSol @?= Right verify_more_comps_result,
+  testCase "One component provides a resource another component then uses" $
+    verify verify_use_provideDB verify_use_provideGoal verify_use_provideSol @?= Right verify_use_provide_result,
+  testCase "More than 1 of some of the components" $
+    verify verify_multiple_of_a_componentDB verify_multiple_of_a_componentGoal verify_multiple_of_a_componentSol @?= Right verify_multiple_of_a_component_result,
+  testCase "Same component listed twice in solution" $
+    verify verify_comp_listed_twiceDB verify_comp_listed_twiceGoal verify_comp_listed_twiceSol @?= Left verify_comp_listed_twice_result,
+  testCase "Same component listed twice in solution with different casing" $
+    verify verify_comp_listed_twice_with_dif_CaseDB verify_comp_listed_twice_with_dif_CaseGoal verify_comp_listed_twice_with_dif_CaseSol @?= Left verify_comp_listed_twice_with_dif_Case_result,
+  testCase "Component have negate value in solution" $
+    verify verify_comp_negative_valDB verify_comp_negative_valGoal verify_comp_negative_valSol @?= Left verify_comp_negative_val_result
+  ]
+  where
+    verify_simpleDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_simpleGoal = [(R "DKK", (3000,0))]
+    verify_simpleSol = [("GPU", 1)]
+    verify_simple_result = [(R "CUDA",(2048,0)),(R "DKK",(1000,0))]
+    verify_no_validDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_no_validGoal = [(R "DKK", (1000,0))]
+    verify_no_validSol = [("GPU", 1)]
+    verify_no_valid_result = "Solution isn't reachable from goal"
+    verify_not_in_dbDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_not_in_dbgoal = [(R "DKK", (1000,0))]
+    verify_not_in_dbSol = [("GPU", 1), ("Monitor", 2)]
+    verify_not_in_db_result = "Couldn't find the component: 'Monitor' in the database."
+    verify_more_compsDB = ([R "CUDA", R "DKK", R "Keyboard", R "Screen"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))]),("Monitor", [(R "DKK", (-1500,0)),(R "Screen", (1,0))]),("Corsair-keyboard", [(R "DKK", (-750,0)),(R "Keyboard", (1,0))])])
+    verify_more_compsGoal = [(R "DKK", (5000,0))]
+    verify_more_compsSol = [("GPU", 1), ("Corsair-keyboard", 1), ("Monitor", 1)]
+    verify_more_comps_result = [(R "CUDA",(2048,0)),(R "DKK",(750,0)),(R "Keyboard",(1,0)),(R "Screen",(1,0))]
+    verify_use_provideDB = ([R "CUDA", R "DKK", R "Keyboard", R "USB"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))]),("Motherboard", [(R "DKK", (-1500,0)),(R "USB", (6,0))]),("Corsair-keyboard", [(R "DKK", (-750,0)),(R "Keyboard", (1,0)), (R "USB", (-1,0))])])
+    verify_use_provideGoal = [(R "DKK", (5000,0))]
+    verify_use_provideSol = [("GPU", 1), ("Corsair-keyboard", 1), ("Motherboard", 1)]
+    verify_use_provide_result = [(R "CUDA",(2048,0)),(R "DKK",(750,0)),(R "Keyboard",(1,0)),(R "USB",(5,0))]
+    verify_multiple_of_a_componentDB = ([R "CUDA", R "DKK", R "Keyboard", R "Screen"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))]),("Monitor", [(R "DKK", (-1500,0)),(R "Screen", (1,0))]),("Corsair-keyboard", [(R "DKK", (-750,0)),(R "Keyboard", (1,0))])])
+    verify_multiple_of_a_componentGoal = [(R "DKK", (10000,0))]
+    verify_multiple_of_a_componentSol = [("GPU", 2), ("Corsair-keyboard", 1), ("Monitor", 3)]
+    verify_multiple_of_a_component_result = [(R "CUDA",(4096,0)),(R "DKK",(750,0)),(R "Keyboard",(1,0)),(R "Screen",(3,0))]
+    verify_comp_listed_twiceDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_comp_listed_twiceGoal = [(R "DKK", (3000,0))]
+    verify_comp_listed_twiceSol = [("GPU", 1), ("GPU", 1)]
+    verify_comp_listed_twice_result = "The solution contains the same component multiple times"
+    verify_comp_listed_twice_with_dif_CaseDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_comp_listed_twice_with_dif_CaseGoal = [(R "DKK", (3000,0))]
+    verify_comp_listed_twice_with_dif_CaseSol = [("GPU", 1), ("gpu", 1)]
+    verify_comp_listed_twice_with_dif_Case_result = "The solution contains the same component multiple times"
+    verify_comp_negative_valDB = ([R "DKK", R "CUDA"],[("GPU", [(R "CUDA", (2048,0)),(R "DKK", (-2000,0))])])
+    verify_comp_negative_valGoal = [(R "DKK", (3000,0))]
+    verify_comp_negative_valSol = [("GPU", 0)]
+    verify_comp_negative_val_result = "One of the components have a negative value"
