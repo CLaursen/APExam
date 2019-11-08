@@ -31,9 +31,10 @@ tests = testGroup "Minimal tests" [
 
 my_tests = testGroup "my tests" [
   parser_tests,
+  elaborator_tests,
   solver_tests
   ]
-  
+
 
 parser_tests = testGroup "parser tests" [
   resource_tests,
@@ -226,6 +227,29 @@ comment_tests = testGroup "comment tests" [
     comment_in_rspec = "component Ram : provides 4{comment}GB."
     comment_in_rspec_result = ([],[IC "Ram" [(CKProvides,RSNum 4 (RSRes "GB"))]])
 
+elaborator_tests = testGroup "elaborator tests" [
+  lookres_tests
+  ]
+
+lookres_tests = testGroup "lookres tests" [
+  testCase "same casing in resource list and rname" $
+    lookres lookres_simple1 lookres_simple2 @?= Right lookres_simple_result,
+  testCase "different casing in resource list and rname" $
+    lookres lookres_different_casing1 lookres_different_casing2 @?= Right lookres_different_casing_result,
+  testCase "one component with one clause" $
+    lookres lookres_not_in_list1 lookres_not_in_list2 @?= Left lookres_not_in_list_result
+  ]
+  where
+    lookres_simple1 = [R "test", R "TeSt2"]
+    lookres_simple2 = "test"
+    lookres_simple_result = R "test"
+    lookres_different_casing1 = [R "test", R "TeSt2"]
+    lookres_different_casing2 = "test2"
+    lookres_different_casing_result = R "TeSt2"
+    lookres_not_in_list1 = [R "test", R "TeSt2"]
+    lookres_not_in_list2 = "test3"
+    lookres_not_in_list_result = "Couldn't find a resource with any casing of the name: test3"
+
 solver_tests = testGroup "Solver tests" [
   combine_tests,
   verify_tests
@@ -265,7 +289,7 @@ combine_tests = testGroup "combine tests" [
     combine_mix1 = [(R "r0", (1,0)),(R "r1", (1,0)),(R "r3", (1,0)),(R "r5", (1,1)),(R "r6", (1,0)),(R "r9", (1,0))]
     combine_mix2 = [(R "r0", (-1,0)),(R "r2", (1,0)),(R "r4", (1,0)),(R "r5", (1,0)),(R "r7", (1,0)),(R "r8", (1,0))]
     combine_mix_result = [(R "r1",(1,0)),(R "r2",(1,0)),(R "r3",(1,0)),(R "r4",(1,0)),(R "r5",(2,1)),(R "r6",(1,0)),(R "r7",(1,0)),(R "r8",(1,0)),(R "r9",(1,0))]
-  
+
 
 verify_tests = testGroup "verify tests" [
   testCase "a simple verify" $
